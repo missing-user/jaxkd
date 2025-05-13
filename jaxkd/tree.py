@@ -2,13 +2,12 @@ import jax
 import jax.numpy as jnp
 from jax.tree_util import Partial
 
-@Partial(jax.jit, static_argnames=('mode',))
-def make_kd_tree(points, mode='sort'):
-    ''' Build a balanced binary kd-tree from points, cycling through the splitting dimension.
+@jax.jit
+def make_kd_tree(points):
+    ''' Build a balanced binary kd-tree from points, splitting along the dimension with largest range for each node.
     
     Args:
         points: (2**l, d) array of points
-        mode: 'sort' (default and recommended) or 'partition'
         
     Returns:
         leaf_indices: (2**l,) indices of points as leaves in the kd-tree
@@ -17,27 +16,28 @@ def make_kd_tree(points, mode='sort'):
     '''
     # Initialize tree arrays
     n_levels = len(points).bit_length() - 1
-    dims = jnp.mod(jnp.arange(n_levels), points.shape[-1]) # cycle through dimensions
     indices = jnp.arange(len(points))
     split_values = jnp.zeros(2**n_levels - 1, dtype=points.dtype)
     split_dims = jnp.zeros(2**n_levels - 1, dtype=int)
     
-    for level, dim in enumerate(dims):
-        # Partition the points along the splitting dimension
-        if mode=='sort': order = jnp.argsort(points[indices, dim], axis=-1)
-        elif mode=='partition': order = jnp.argpartition(points[indices, dim], indices.shape[-1]//2, axis=-1)
+    for level in range(n_levels):
+        # Determine optimal split dimension for current leaves
+        split_dim = jnp.argmax(jnp.max(points[indices], axis=-2) - jnp.min(points[indices], axis=-2), axis=-1)
+        # Partition points along the split dimension
+        points_along_dim = jnp.take_along_axis(points[indices], split_dim[...,None,None], axis=-1).squeeze(-1)
+        order = jnp.argsort(points_along_dim, axis=-1) # note: jnp.argpartition is not faster
         indices = jnp.take_along_axis(indices, order, axis=-1)
         indices = indices.reshape(*indices.shape[:-1], 2, -1)
         # Store the split value and dimension at the appropriate level
-        medians = points[indices[..., 0, -1], dim]/2 + points[indices[..., 1, 0], dim]/2
+        medians = jnp.take_along_axis(points[indices[..., 0, -1]], split_dim[...,None], axis=-1).squeeze(-1)/2 + jnp.take_along_axis(points[indices[..., 1, 0]], split_dim[...,None], axis=-1).squeeze(-1)/2
         split_values = split_values.at[2**level-1:2**(level+1)-1].set(medians.ravel())
-        split_dims = split_dims.at[2**level-1:2**(level+1)-1].set(dim)
+        split_dims = split_dims.at[2**level-1:2**(level+1)-1].set(split_dim.ravel())
     return indices.ravel(), split_values, split_dims
 
 
 @Partial(jax.jit, static_argnames=('k',))
 def query_neighbors(query, points, leaf_indices, split_values, split_dims, k=1):
-    ''' Find the k nearest neighbors of a query point in a kd-tree.
+    ''' Find the k nearest neighbors of a query point using a kd-tree.
 
     Args:
         query: (d,) query point
@@ -46,11 +46,12 @@ def query_neighbors(query, points, leaf_indices, split_values, split_dims, k=1):
         split_values: (2**l-1,) split value for each internal node in the kd-tree
         split_dims: (2**l-1,) split dimension for each each internal node in the kd-tree
         k: number of neighbors to return
+
     Returns:
         neighbors: (k,) indices of the k nearest neighbors
         distances: (k,) distances to the k nearest neighbors
+        n_visits: number of nodes visited in the kd-tree
     '''
-
     # Initialize neighbor arrays and node pointers
     curr = 0
     prev = -1
@@ -60,9 +61,7 @@ def query_neighbors(query, points, leaf_indices, split_values, split_dims, k=1):
 
     def step(carry):
         curr, prev, neighbors, square_distances = carry
-        
-        # If the node is a leaf, check if we need to update neighbors
-        # Note: doing these computations conditionally seems to have no performance impact
+        # If the node is a leaf, check if we need to update neighbors (note: no performance gain from doing this conditionally)
         depth = jnp.floor(jnp.log2(curr + 1)).astype(int)
         leaf = curr - (2**depth - 1)
         leaf_square_distance = jnp.sum(jnp.square(points[leaf_indices[leaf]] - query), axis=-1)
@@ -112,3 +111,95 @@ def tree_index_to_path(index):
     steps = jnp.arange(depth)[::-1]
     path = ((index + 1) >> steps) & 1
     return path
+
+
+
+# Old version cycling through dimensions, this matters a lot for the worst-case, which dominates runtime when vectorized
+
+# @Partial(jax.jit, static_argnames=('mode',))
+# def make_kd_tree(points, mode='sort'):
+#     ''' Build a balanced binary kd-tree from points, cycling through the splitting dimension.
+    
+#     Args:
+#         points: (2**l, d) array of points
+#         mode: 'sort' (default and recommended) or 'partition'
+        
+#     Returns:
+#         leaf_indices: (2**l,) indices of points as leaves in the kd-tree
+#         split_values: (2**l-1,) split value for each internal node in the kd-tree
+#         split_dims: (2**l-1,) split dimension for each each internal node in the kd-tree
+#     '''
+#     # Initialize tree arrays
+#     n_levels = len(points).bit_length() - 1
+#     dims = jnp.mod(jnp.arange(n_levels), points.shape[-1]) # cycle through dimensions
+#     indices = jnp.arange(len(points))
+#     split_values = jnp.zeros(2**n_levels - 1, dtype=points.dtype)
+#     split_dims = jnp.zeros(2**n_levels - 1, dtype=int)
+    
+#     for level, dim in enumerate(dims):
+#         # Partition the points along the splitting dimension
+#         if mode=='sort': order = jnp.argsort(points[indices, dim], axis=-1)
+#         elif mode=='partition': order = jnp.argpartition(points[indices, dim], indices.shape[-1]//2, axis=-1)
+#         indices = jnp.take_along_axis(indices, order, axis=-1)
+#         indices = indices.reshape(*indices.shape[:-1], 2, -1)
+#         # Store the split value and dimension at the appropriate level
+#         medians = points[indices[..., 0, -1], dim]/2 + points[indices[..., 1, 0], dim]/2
+#         split_values = split_values.at[2**level-1:2**(level+1)-1].set(medians.ravel())
+#         split_dims = split_dims.at[2**level-1:2**(level+1)-1].set(dim)
+#     return indices.ravel(), split_values, split_dims
+
+
+# Version starting from leaf node, slightly fewer visits but probably not worth it
+
+# @Partial(jax.jit, static_argnames=('k',))
+# def query_member_neighbors(points, query_index, leaf_indices, split_values, split_dims, k=1):
+#     # Initialize neighbor arrays and node pointers
+#     max_depth = len(points).bit_length() - 1
+#     query = points[query_index]
+#     curr = jnp.argsort(leaf_indices)[query_index] + (2**max_depth - 1) # start query point
+#     prev = -2
+#     neighbors = jnp.zeros(k, dtype=int)
+#     square_distances = jnp.inf * jnp.ones(k)
+#     num_steps = 0
+
+#     def step(carry):
+#         curr, prev, neighbors, square_distances, num_steps = carry
+#         # If the node is a leaf, check if we need to update neighbors
+#         # Note: doing these computations conditionally seems to have no performance impact
+#         depth = jnp.floor(jnp.log2(curr + 1)).astype(int)
+#         leaf = curr - (2**depth - 1)
+#         leaf_square_distance = jnp.sum(jnp.square(points[leaf_indices[leaf]] - query), axis=-1)
+#         max_neighbor = jnp.argmax(square_distances)
+#         replace = (depth == max_depth) & (leaf_square_distance < square_distances[max_neighbor])
+#         neighbors = jax.lax.select(replace, neighbors.at[max_neighbor].set(leaf_indices[leaf]), neighbors)
+#         square_distances = jax.lax.select(replace, square_distances.at[max_neighbor].set(leaf_square_distance), square_distances)
+
+#         # Locate children and determine if far child is in range
+#         split_distance = query[split_dims[curr]] - split_values[curr]
+#         near_side = (split_distance > 0).astype(int)
+#         near_child = 2*curr + 1 + near_side
+#         far_child = 2*curr + 2 - near_side
+#         far_in_range = (split_distance**2 <= jnp.max(square_distances))
+
+#         # Determine next node to traverse
+#         parent = (curr - 1) // 2
+#         next = jax.lax.select(
+#             prev == parent, # if we just came from the parent
+#             jax.lax.select(depth < max_depth, near_child, parent), # go to near child if internal node, or back to parent if leaf
+#             jax.lax.select(
+#                 prev == near_child, # if we just came from the near child
+#                 jax.lax.select(far_in_range, far_child, parent), # go to far child if in range, or back to parent if not
+#                 parent, # if we just came from the far child, or are just starting from the query, go back to parent
+#             )
+#         )
+#         return next, curr, neighbors, square_distances, num_steps + 1
+    
+#     # Loop until we return to root
+#     _, _, neighbors, square_distances, num_steps = jax.lax.while_loop(lambda carry: carry[0] >= 0, step, (curr, prev, neighbors, square_distances, num_steps))
+#     order = jnp.argsort(square_distances)
+#     return neighbors[order], jnp.sqrt(square_distances[order]), num_steps
+
+
+
+
+
