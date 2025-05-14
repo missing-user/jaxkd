@@ -19,6 +19,7 @@ def make_kd_tree(points):
     indices = jnp.arange(len(points))
     split_values = jnp.zeros(2**n_levels - 1, dtype=points.dtype)
     split_dims = jnp.zeros(2**n_levels - 1, dtype=int)
+    if len(points) != 2**n_levels: raise ValueError('Number of points must be a power of 2, try padding with jnp.inf')
     
     for level in range(n_levels):
         # Determine optimal split dimension for current leaves
@@ -54,7 +55,7 @@ def query_neighbors(query, points, leaf_indices, split_values, split_dims, k=1):
     # Initialize neighbor arrays and node pointers
     curr = 0
     prev = -1
-    neighbors = jnp.zeros(k, dtype=int)
+    neighbors = -1 * jnp.ones(k, dtype=int)
     square_distances = jnp.inf * jnp.ones(k)
     max_depth = len(points).bit_length() - 1
 
