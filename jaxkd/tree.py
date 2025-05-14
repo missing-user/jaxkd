@@ -37,7 +37,7 @@ def make_kd_tree(points):
 
 @Partial(jax.jit, static_argnames=('k',))
 def query_neighbors(query, points, leaf_indices, split_values, split_dims, k=1):
-    ''' Find the k nearest neighbors of a query point using a kd-tree.
+    ''' Find the k nearest neighbors of a query point using a kd-tree. Traversal algorithm follows https://arxiv.org/abs/2210.12859.
 
     Args:
         query: (d,) query point
@@ -50,7 +50,6 @@ def query_neighbors(query, points, leaf_indices, split_values, split_dims, k=1):
     Returns:
         neighbors: (k,) indices of the k nearest neighbors
         distances: (k,) distances to the k nearest neighbors
-        n_visits: number of nodes visited in the kd-tree
     '''
     # Initialize neighbor arrays and node pointers
     curr = 0
@@ -94,20 +93,3 @@ def query_neighbors(query, points, leaf_indices, split_values, split_dims, k=1):
     _, _, neighbors, square_distances = jax.lax.while_loop(lambda carry: carry[0] >= 0, step, (curr, prev, neighbors, square_distances))
     order = jnp.argsort(square_distances)
     return neighbors[order], jnp.sqrt(square_distances[order])
-
-
-def tree_path_to_index(path):
-    ''' Convert a binary path to a tree index. '''
-    path = jnp.array(path)
-    depth = len(path)
-    powers = 1 << jnp.arange(depth)[::-1]
-    offset = (1 << depth) - 1
-    local_index = jnp.sum(path * powers)
-    return offset + local_index
-
-def tree_index_to_path(index):
-    ''' Convert a tree index to a binary path. '''
-    depth = jnp.floor(jnp.log2(index + 1)).astype(int)
-    steps = jnp.arange(depth)[::-1]
-    path = ((index + 1) >> steps) & 1
-    return path
