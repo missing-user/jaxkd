@@ -6,6 +6,10 @@ import time
 import jaxkd as jk
 import argparse
 
+# Quick trials on H100
+# N=1M, k=4, d=3: 0.067 s build, 0.22 s query all points
+# N=100M, k=4, d=3: 10 s build, 30 s query all points
+# N=1B, k=4, d=2: 114 s build, 6.9 s query 100M points
 
 argparse = argparse.ArgumentParser(description='Simple speed trials')
 argparse.add_argument('--points', type=int, default=1024, help='Number of random points to generate')
