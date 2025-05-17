@@ -1,7 +1,15 @@
 [build-system]
-requires = ["setuptools >= 77.0.3"]
-build-backend = "setuptools.build_meta"
+requires = ["hatchling >= 1.26"]
+build-backend = "hatchling.build"
 
 [project]
 name = "jaxkd"
 version = "0.0.1"
+authors = [
+    {name="Benjamin Dodge", email="bendodge@stanford.edu"}
+]
+description = "Minimal JAX implementation of KNN using a KD tree."
+readme = "README.md"
+license = "MIT"
+license-files = ["LICEN[CS]E*"]
+dependencies = ["jax"]

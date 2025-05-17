@@ -1,1 +1,1 @@
-from .tree import make_kd_tree, query_neighbors
+from .tree import build_tree, query_neighbors
