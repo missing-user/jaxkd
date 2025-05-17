@@ -5,7 +5,7 @@ This is essentially just a translation of two GPU-friendly tree algorithms [[1](
 The `build_tree` and `query_neighbors` operations are compatible with JIT and automatic differentiation. They are reasonably fast when vectorized on GPU, but will be much slower than `scipy.spatial.KDTree` on CPU. The main advantage is to avoid the complexity of using non-JAX libraries and potentially leaving JIT and the GPU when a scalable nearest neighbor search is needed as part of a larger JAX program.
 
 Usage:
-```
+```python
 import jax
 import jaxkd as jk
 kp, kq = jax.random.split(jax.random.key(83))
