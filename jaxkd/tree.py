@@ -123,7 +123,7 @@ def _single_query(tree, query, k):
     previous = -1
     neighbors = -1 * jnp.ones(k, dtype=int)
     square_distances = jnp.inf * jnp.ones(k)
-    points, indices, split_dims = tree
+    points, indices, split_dims = lax.stop_gradient(tree)
     n_points = len(points)
 
     def step(carry):
