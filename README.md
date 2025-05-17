@@ -2,18 +2,16 @@ Minimal JAX implementation of k-nearest neighbors using a k-d tree!
 
 This is essentially just a translation of two GPU-friendly tree algorithms [[1](https://arxiv.org/abs/2211.00120), [2](https://arxiv.org/abs/2210.12859)] into XLA primitives. It is convenient and lightweight, but the original [CUDA implementation](https://github.com/ingowald/cudaKDTree) may be a better choice depending on the application.
 
-The `build_tree` and `query_neighbors` operations are compatible with JIT and automatic differentiation. They work efficiently when vectorized on GPU, but are significantly slower than `scipy.spatial.KDTree` on CPU. The main advantage is to avoid the complexity of using non-JAX libraries and potentially leaving JIT and the GPU when a scalable nearest neighbor search is needed as part of a larger JAX program.
+The `build_tree` and `query_neighbors` operations are compatible with JIT and automatic differentiation. They work efficiently when vectorized on GPU, but are significantly slower than `scipy.spatial.KDTree` on CPU. The main advantage is to avoid the complexity of using non-JAX libraries and potentially leaving JIT and the GPU when a simple but scalable nearest neighbor search is needed as part of a larger JAX program.
 
-
-Basic usage:
-
+Usage:
 ```
 import jax
 import jaxkd as jk
 kp, kq = jax.random.split(jax.random.key(83))
 
-points = jax.random.normal(kp, shape=(10_000, 3))
-queries = jax.random.normal(kq, shape=(1_000, 3))
+points = jax.random.normal(kp, shape=(100_000, 3))
+queries = jax.random.normal(kq, shape=(10_000, 3))
 tree = jk.build_tree(points)
 neighbors, distances = jk.query_neighbors(tree, queries, 10)
 ```
@@ -21,4 +19,4 @@ neighbors, distances = jk.query_neighbors(tree, queries, 10)
 
 Notes:
 - The tree structure is stored with a tuple of arrays: `points` in the original order (not copied), `indices` to put the points in tree order, and `split_dims` which (if the tree is built with `optimized=True`) specify the splitting dimension independently for each node. If needed, the memory overhead could potentially be reduced by sorting `points` in-place.
-- The `query_neighbors` function is intended for relatively small values of *k* and does not use a max heap for simplicity. If *k* is large enough this will become worthwhile.
+- The `query_neighbors` function is intended for relatively small values of *k* and does not use a max heap for simplicity. If *k* is large enough that will become worthwhile.

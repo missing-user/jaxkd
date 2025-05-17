@@ -6,8 +6,8 @@ from collections import namedtuple
 
 tree_type = namedtuple('tree', ['points', 'indices', 'split_dims'])
 
-@Partial(jax.jit, static_argnames=('optimized',))
-def build_tree(points, optimized=True):
+@Partial(jax.jit, static_argnames=('optimize',))
+def build_tree(points, optimize=True):
     """
     Build a k-d tree from points.
 
@@ -16,7 +16,7 @@ def build_tree(points, optimized=True):
     
     Args:
         points: (N, d)
-        optimized: If True (default), split along dimension with the largest range. This typically leads to faster queries. If False, cycle through dimensions in order.
+        optimize: If True (default), split along dimension with the largest range. This typically leads to faster queries. If False, cycle through dimensions in order.
         
     Returns:
         tree (namedtuple)
@@ -25,10 +25,10 @@ def build_tree(points, optimized=True):
             - split_dims: (N,) Splitting dimension of each tree node, marked -1 for leaves. If `optimized=False` this is set to None.
     """
     if points.ndim != 2: raise ValueError(f'Points must have shape (N, d). Got shape {points.shape}.')
-    return _build_tree_nojit(points, optimized=optimized)
+    return _build_tree_nojit(points, optimize=optimize)
 
 
-def _build_tree_nojit(points, optimized=True):
+def _build_tree_nojit(points, optimize=True):
     """ Non-jitted underlying implementation of `build_tree`, rarely worth it even if only building the tree once. """
     n_points = len(points)
     n_levels = n_points.bit_length()
@@ -37,9 +37,9 @@ def _build_tree_nojit(points, optimized=True):
         nodes, indices, split_dims = carry
 
         # Sort the points in each node group along the splitting dimension, either optimized or cycling
-        if optimized:
+        if optimize:
             dim_range = jax.ops.segment_max(points[indices], nodes, num_segments=n_points) - jax.ops.segment_min(points[indices], nodes, num_segments=n_points)
-            split_dim = jnp.argmax(dim_range, axis=-1)[nodes].astype(jnp.int8)
+            split_dim = jnp.argmax(dim_range, axis=-1)[nodes]#.astype(jnp.int8)
             points_along_dim = jnp.take_along_axis(points[indices], split_dim[:, None], axis=-1).squeeze(axis=-1)
             nodes, _, indices, split_dim, split_dims = lax.sort((nodes, points_along_dim, indices, split_dim, split_dims), dimension=0, num_keys=2) # primary sort by node, secondary sort by points
         else:
@@ -76,13 +76,13 @@ def _build_tree_nojit(points, optimized=True):
         )
 
         # Update split dimension at pivot
-        if optimized: split_dims = lax.select((array_index == pivot_position) & (left_child < n_points), split_dim, split_dims)
+        if optimize: split_dims = lax.select((array_index == pivot_position) & (left_child < n_points), split_dim, split_dims)
         return (nodes, indices, split_dims), None
 
     # Start all points at root and sort into tree at each level
     nodes = jnp.zeros(n_points, dtype=int)
     indices = jnp.arange(n_points)
-    split_dims = -1 * jnp.ones(n_points, dtype=jnp.int8) if optimized else None # technically only need for internal nodes, but this makes sorting easier at the cost of memory
+    split_dims = -1 * jnp.ones(n_points, dtype=int) if optimize else None # technically only need for internal nodes, but this makes sorting easier at the cost of memory
     (nodes, indices, split_dims), _ = lax.scan(step, (nodes, indices, split_dims), jnp.arange(n_levels)) # nodes should equal jnp.arange(n_points) at the end
     return tree_type(points, indices, split_dims)
 
@@ -108,7 +108,7 @@ def query_neighbors(tree, query, k):
     """
     if k > len(tree.points):
         raise ValueError(f'Cannot query {k} neighbors, tree contains only {len(tree.points)} points.')
-    if len(tree.points) != len(tree.indices) or len(tree.points) != len(tree.split_dims):
+    if len(tree.points) != len(tree.indices) or (tree.split_dims is not None and len(tree.points) != len(tree.split_dims)):
         raise ValueError(f'Invalid tree, got len(points)={len(tree.points)}, len(indices)={len(tree.indices)}, len(split_dims)={len(tree.split_dims)}.')
     if query.ndim == 1: return _single_query(tree, query, k)
     if query.ndim == 2: return jax.vmap(lambda q: _single_query(tree, q, k))(query)
@@ -134,7 +134,7 @@ def _single_query(tree, query, k):
         # Update neighbors with the current node if necessary
         square_distance = jnp.sum(jnp.square(points[indices[current]] - query), axis=-1)
         max_neighbor = jnp.argmax(square_distances)
-        replace = (current < len(points)) & (previous == parent) & (square_distance < square_distances[max_neighbor])
+        replace = (current < n_points) & (previous == parent) & (square_distance < square_distances[max_neighbor])
         neighbors = lax.select(replace, neighbors.at[max_neighbor].set(indices[current]), neighbors)
         square_distances = lax.select(replace, square_distances.at[max_neighbor].set(square_distance), square_distances)
 
@@ -156,6 +156,6 @@ def _single_query(tree, query, k):
 
     # Loop until we return to root
     _, _, neighbors, square_distances = lax.while_loop(lambda carry: carry[0] >= 0, step, (current, previous, neighbors, square_distances))
-    distances = jnp.linalg.norm(points[indices[neighbors]] - query, axis=-1) # recompute distances to enable VJP
-    order = jnp.argsort(distances)
+    distances = jnp.linalg.norm(points[neighbors] - query, axis=-1) # recompute distances to enable VJP
+    order = jnp.argsort(distances, axis=-1)
     return neighbors[order], distances[order]
