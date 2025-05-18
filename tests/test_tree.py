@@ -86,6 +86,7 @@ def test_random():
     assert jnp.allclose(distances[500, 9], 0.1562879, atol=1e-5)
     assert counts[500] == 50
     
+
 def test_not_optimized():
     kp, kq = jax.random.split(jax.random.key(83))
     points = jax.random.normal(kp, shape=(1_000, 3))
@@ -98,3 +99,13 @@ def test_not_optimized():
     assert neighbors[0,0] == 549
     assert jnp.allclose(distances[0,0], 0.2752785, atol=1e-5)
     assert counts[1] == 11
+
+def test_grad():
+    def loss_func(points):
+        tree = jk.build_tree(points)
+        neighbors, _ = jk.query_neighbors(tree, points, k=5)
+        distances = jnp.linalg.norm(points[:,None] - points[neighbors][:,1:], axis=-1)
+        return jnp.sum(distances**2)
+    
+    grad = jax.grad(loss_func)(jnp.arange(30).reshape(10,3).astype(jnp.float32))
+    assert jnp.isclose(grad[0,0], -78., atol=1e-5)
