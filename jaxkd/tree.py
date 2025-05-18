@@ -82,18 +82,30 @@ def count_neighbors(tree, query, radius):
             - indices: (N,) Indices of points in binary tree order.
             - split_dims: (N,) Splitting dimension of each tree node, not used for leaves. If None, assume cycle through dimensions in order.
         query: (d,) or (Q, d) Query point(s).
-        radius: (float) or (R,) Radius or radii to count neighbors within, multiple radii are done in a single tree traversal.
+        radius: (float) (R,) or (Q, R) Radius or radii to count neighbors within, multiple radii are done in a single tree traversal.
 
     Returns:
         counts: (1,) (Q,) (R,) or (Q, R) Number of neighbors within the given radius(i) of query point(s).
     """
     if len(tree.points) != len(tree.indices) or (tree.split_dims is not None and len(tree.points) != len(tree.split_dims)):
         raise ValueError(f'Invalid tree, got len(points)={len(tree.points)}, len(indices)={len(tree.indices)}, len(split_dims)={len(tree.split_dims)}.')
-    if radius.ndim == 0: radius = jnp.array([radius])
-    if query.ndim == 1: counts = _single_count_neighbors(tree, query, radius)
-    elif query.ndim == 2: counts = jax.vmap(lambda q: _single_count_neighbors(tree, q, radius))(query)
-    else: raise ValueError(f'Query must have shape (Q, d) or (d,). Got shape {query.shape}.')
-    if radius.shape[-1] == 1: return counts.squeeze(-1)
+    squeeze = False
+    if radius.ndim > 2 or query.ndim > 2 or (radius.ndim == 2 and query.ndim == 1) or ((radius.ndim == 2 and query.ndim == 2) and radius.shape[0] != query.shape[0]):
+        raise ValueError(f'Invalid shape for query {query.shape} or radius {radius.shape}.')
+    if radius.ndim == 0:
+        squeeze = True
+        radius = jnp.array([radius])
+    if query.ndim == 1:
+        counts = _single_count_neighbors(tree, query, radius)
+    elif query.ndim == 2:
+        if radius.ndim == 1:
+            counts = jax.vmap(lambda q: _single_count_neighbors(tree, q, radius))(query)
+        elif radius.ndim == 2:
+            counts = jax.vmap(lambda q, r: _single_count_neighbors(tree, q, r))(query, radius)
+    else:
+        raise ValueError(f'Query must have shape (Q, d) or (d,). Got shape {query.shape}.')
+    if squeeze:
+        return counts.squeeze(-1)
     return counts
 
 

@@ -5,7 +5,7 @@ import jaxkd as jk
 def test_shapes():
     points = jnp.zeros((100, 3))
     queries = jnp.zeros((50, 3))
-    radius = jnp.zeros((20,))
+    radius = jnp.zeros((50,20))
 
     # Tree construction
     tree = jk.build_tree(points)
@@ -29,11 +29,12 @@ def test_shapes():
     assert neighbors.shape == (queries.shape[0], 10)
     assert distances.shape == (queries.shape[0], 10)
 
-    # Four possible shapes for count
-    assert jk.count_neighbors(tree, queries[0], radius[0]).shape == ()
-    assert jk.count_neighbors(tree, queries[0], radius).shape == (radius.shape[0],)
-    assert jk.count_neighbors(tree, queries, radius[0]).shape == (queries.shape[0],)
-    assert jk.count_neighbors(tree, queries, radius).shape == (queries.shape[0], radius.shape[0])
+    # Five possible cases for count
+    assert jk.count_neighbors(tree, queries[0], radius[0,0]).shape == ()
+    assert jk.count_neighbors(tree, queries[0], radius[0]).shape == (radius.shape[1],)
+    assert jk.count_neighbors(tree, queries, radius[0,0]).shape == (queries.shape[0],)
+    assert jk.count_neighbors(tree, queries, radius[0]).shape == (queries.shape[0], radius.shape[1])
+    assert jk.count_neighbors(tree, queries, radius).shape == radius.shape
 
 
 def test_small_case():
