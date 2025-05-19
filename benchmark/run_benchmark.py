@@ -23,19 +23,19 @@ def run_trial(points_n, queries_n, neighbors=4, trials=1):
         points = jax.random.normal(subkey, shape=(points_n, dims))
         queries = points[:queries_n]
 
+        time.sleep(1)
         # Build KD-tree
         start = time.time()
         tree = jk.build_tree(points)
         tree[1].block_until_ready()
         kd_build_time = time.time() - start
-
         # KD-tree query
         start = time.time()
         neighbors_kd, distances_kd = jk.query_neighbors(tree, queries, neighbors)
         neighbors_kd.block_until_ready()
         kd_query_time = time.time() - start
         kd_mem = get_memory_usage_mb() - mem0
-
+        time. sleep(1)
         # Naive query
         start = time.time()
         dists = jnp.linalg.norm(points[None, :, :] - queries[:, None, :], axis=-1)
@@ -64,6 +64,10 @@ def main():
         (1000, 1000),
         (10000, 10),
         (10000, 100),
+        (10000, 1000),
+        (100000,10),
+        (100000,100),
+        (100000,1000)
     ]
 
     all_results = []
@@ -75,7 +79,7 @@ def main():
     for r in all_results:
         print(f"[{r['points']} pts, {r['queries']} q] "
               f"KD: {r['kd_query_time']:.3f}s | Naive: {r['naive_time']:.3f}s | "
-              f"Mem KD: {r['kd_mem']:.1f}MB | Naive: {r['naive_mem']:.1f}MB")
+              f"Mem KD: {r['kd_mem']:.1f}MB | Naive: {r['naive_mem']:.1f}MB | Build{r['kd_build_time']} ")
 
 if __name__ == "__main__":
     main()
