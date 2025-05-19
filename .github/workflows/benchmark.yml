@@ -1,13 +1,6 @@
 name: JAX KD-tree Benchmark
 
-on:
-  push:
-    paths:
-      - 'benchmark/**'
-  pull_request:
-    paths:
-      - 'benchmark/**'
-
+on: [push, pull_request] 
 jobs:
   benchmark:
     runs-on: ubuntu-latest
